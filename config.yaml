@@ -1,0 +1,7 @@
+DBHost: localhost
+DBUser: vader
+DBPasswd: ddd
+Group: hokarn
+Sensor:
+    - Uterum: 1wire-spa
+    - Inne: rfx-inne

@@ -1,0 +1,14 @@
+json = {
+   "Battery" : 255,
+   "RSSI" : 12,
+   "description" : "",
+   "dtype" : "Temp",
+   "id" : "54950",
+   "idx" : 1,
+   "meterType" : "Energy",
+   "name" : "Hall",
+   "nvalue" : 0,
+   "stype" : "LaCrosse TX3",
+   "svalue1" : "21.5",
+   "unit" : 166
+}
