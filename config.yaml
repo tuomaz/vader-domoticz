@@ -1,7 +1,10 @@
-DBHost: localhost
-DBUser: vader
-DBPasswd: ddd
-Group: hokarn
-Sensor:
-    - Uterum: 1wire-spa
-    - Inne: rfx-inne
+dbhost: localhost
+dbuser: vader
+dbpasswd: ddd
+mqtthost: 192.168.43.38
+group: hokarn
+sensor:
+    - DomoticzName: Uterum
+      VaderName: 1w-uterum
+    - DomoticzName: Ute
+      VaderName: rfx-ute

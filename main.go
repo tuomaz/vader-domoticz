@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -30,12 +29,18 @@ type vaderData struct {
 	Timestamp  string  `json:"timestamp"`
 }
 
-type configuration struct {
+type Configuration struct {
 	DBHost   string
+	DBUser   string
 	DBPasswd string
-	DBname   string
+	MQTTHost string
 	Group    string
-	Sensor   map[string]string
+	Sensor   []ConfigurationSensor
+}
+
+type ConfigurationSensor struct {
+	DomoticzName string
+	VaderName    string
 }
 
 var blowup bool
@@ -45,29 +50,38 @@ var tempKitchen string
 var configFile = "config.yaml"
 
 func main() {
-	logger, level, err := createLogger()(*zap.Logger, zap.AtomicLevel, error)
+	c2 := Configuration{
+		DBHost: "test",
+		DBUser: "test2",
+	}
+
+	out, _ := yaml.Marshal(c2)
+	fmt.Printf("YAML ut: %s", string(out))
+
+	logger, level, err := createLogger()
 
 	if err != nil {
-		fmt.Errorf("Could not initialize zap logger: %v", err)
+		fmt.Printf("Could not initialize zap logger: %v\n", err)
 		os.Exit(1)
 	}
 
 	level.SetLevel(zapcore.DebugLevel)
 
-	fmt.Printf("Starting up...\n")
-	config := configuration{}
+	logger.Info("Starting up...\n")
+	config := Configuration{}
 
 	data, err := ioutil.ReadFile(configFile)
 	if err != nil {
-		fmt.Printf("Could not read config file %v", configFile)
-		return
+		logger.Fatal("Could not read config file", zap.String("config file", configFile))
 	}
 
-	err = yaml.Unmarshal([]byte(data), &config)
+	logger.Debug("Config file data", zap.String("config file data", string(data)))
+
+	err = yaml.Unmarshal(data, &config)
 	if err != nil {
-		log.Fatalf("error: %v", err)
+		logger.Fatal("error", zap.Error(err))
 	}
-	fmt.Printf("--- t:\n%v\n\n", config)
+	logger.Debug("Read config file", zap.String("DBHost", config.DBHost))
 
 	sigs := make(chan os.Signal, 1)
 	done := make(chan bool, 1)
@@ -155,11 +169,25 @@ func newEncoderConfig() zapcore.EncoderConfig {
 	}
 }
 
+func newDevelopmentConfig() zap.Config {
+	dyn := zap.NewAtomicLevel()
+	dyn.SetLevel(zap.DebugLevel)
+
+	return zap.Config{
+		Level:            dyn,
+		Development:      true,
+		Encoding:         "console",
+		EncoderConfig:    newEncoderConfig(),
+		OutputPaths:      []string{"stderr"},
+		ErrorOutputPaths: []string{"stderr"},
+	}
+}
+
 func createLogger() (*zap.Logger, zap.AtomicLevel, error) {
 	cfg := newDevelopmentConfig()
 	logger, err := cfg.Build()
 	if err != nil {
-		return nil, nil, err
+		return nil, zap.AtomicLevel{}, err
 	}
 	return logger, cfg.Level, nil
 }
