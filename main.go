@@ -7,7 +7,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"strconv"
+
+	"github.com/go-resty/resty"
 	"github.com/yosssi/gmq/mqtt"
 	"github.com/yosssi/gmq/mqtt/client"
 	"go.uber.org/zap"
@@ -22,9 +26,10 @@ type DomoticzsData struct {
 	Name    string `json:"name"`
 }
 
-type vaderData struct {
+// sample = {'name' : row[1], 'value' : float(row[0]), 'type' : 'TEMPERATURE', 'timestamp' : row[2] * 1000}
+type VaderData struct {
 	Name       string  `json:"name"`
-	Value      float32 `json:"value"`
+	Value      float64 `json:"value"`
 	SensorType string  `json:"type"`
 	Timestamp  string  `json:"timestamp"`
 }
@@ -39,8 +44,9 @@ type Configuration struct {
 }
 
 type ConfigurationSensor struct {
-	DomoticzName string
-	VaderName    string
+	Domoticz string
+	Vader    string
+	SType    string
 }
 
 var blowup bool
@@ -48,16 +54,23 @@ var premult bool
 var temperature string
 var tempKitchen string
 var configFile = "config.yaml"
+var config Configuration
+var logger *zap.Logger
 
 func main() {
-	c2 := Configuration{
-		DBHost: "test",
-		DBUser: "test2",
-	}
+	/*
+		c2 := Configuration{}
+		c2.DBHost = "TEST"
+		c2.Sensor = make([]ConfigurationSensor, 0)
 
-	out, _ := yaml.Marshal(c2)
-	fmt.Printf("YAML ut: %s", string(out))
+		c2.Sensor = append(c2.Sensor, ConfigurationSensor{Domoticz: "A", Vader: "B"})
+		c2.Sensor = append(c2.Sensor, ConfigurationSensor{Domoticz: "C", Vader: "D"})
 
+		b, _ := yaml.Marshal(c2)
+		fmt.Printf("%s", string(b))
+
+		os.Exit(0)
+	*/
 	logger, level, err := createLogger()
 
 	if err != nil {
@@ -68,20 +81,19 @@ func main() {
 	level.SetLevel(zapcore.DebugLevel)
 
 	logger.Info("Starting up...\n")
-	config := Configuration{}
+	config = Configuration{}
 
 	data, err := ioutil.ReadFile(configFile)
 	if err != nil {
 		logger.Fatal("Could not read config file", zap.String("config file", configFile))
 	}
 
-	logger.Debug("Config file data", zap.String("config file data", string(data)))
-
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
 		logger.Fatal("error", zap.Error(err))
 	}
-	logger.Debug("Read config file", zap.String("DBHost", config.DBHost))
+
+	logger.Debug("Lengt of sensors list", zap.Int("len", len(config.Sensor)))
 
 	sigs := make(chan os.Signal, 1)
 	done := make(chan bool, 1)
@@ -105,14 +117,14 @@ func main() {
 	// Connect to the MQTT Server.
 	err = cli.Connect(&client.ConnectOptions{
 		Network:  "tcp",
-		Address:  "localhost:1883",
+		Address:  fmt.Sprintf("%s:1883", config.MQTTHost),
 		ClientID: []byte("vader"),
 	})
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Printf("Connected to server")
+	logger.Debug("Connected to server")
 
 	// Subscribe to topics.
 	err = cli.Subscribe(&client.SubscribeOptions{
@@ -122,19 +134,28 @@ func main() {
 				QoS:         mqtt.QoS0,
 				// Define the processing of the message handler.
 				Handler: func(topicName, message []byte) {
-					fmt.Printf("json = %v", string(message))
 					dd := &DomoticzsData{}
 					err := json.Unmarshal(message, dd)
 					if err != nil {
-						fmt.Printf("Failed to unmarshall data %v\n", err)
+						logger.Error("Failed to unmarshall data", zap.Error(err))
 					}
-					fmt.Printf("ID = %s, svalue1 = %s, name = %s\n", dd.ID, dd.Svalue1, dd.Name)
-					if dd.ID == "3585" {
-						temperature = dd.Svalue1
+					name, stype := findVaderTypes(dd.Name)
+					valueFloat, err := strconv.ParseFloat(dd.Svalue1, 64)
+					if err != nil {
+						logger.Error("Could not parse float", zap.String("value", dd.Svalue1))
+						return
 					}
-					if dd.ID == "260" {
-						tempKitchen = dd.Svalue1
+					if name != "" {
+						vd := VaderData{
+							Name:       name,
+							Value:      valueFloat,
+							SensorType: stype,
+							Timestamp:  fmt.Sprintf("%d", time.Now().Unix()*1000),
+						}
+						sendData(vd)
 					}
+					logger.Debug("Data", zap.String("name", name), zap.String("value", dd.Svalue1))
+
 				},
 			},
 		},
@@ -143,9 +164,9 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("Awaiting signal")
+	logger.Debug("Awaiting signal")
 	<-done
-	fmt.Println("Exiting")
+	logger.Info("Exiting")
 
 	// Disconnect the Network Connection.
 	if err := cli.Disconnect(); err != nil {
@@ -190,4 +211,31 @@ func createLogger() (*zap.Logger, zap.AtomicLevel, error) {
 		return nil, zap.AtomicLevel{}, err
 	}
 	return logger, cfg.Level, nil
+}
+
+func findVaderTypes(domoticz string) (string, string) {
+	for _, s := range config.Sensor {
+		if s.Domoticz == domoticz {
+			return s.Vader, s.SType
+		}
+	}
+	return "", ""
+}
+
+func sendData(vd VaderData) {
+	list := make([]VaderData, 0)
+	list = append(list, vd)
+	resp, err := resty.R().
+		SetBody(list).
+		Post("http://t.jpl.se/vader/rest/save")
+	if err != nil {
+		logger.Error("Failed to post vader data", zap.Error(err))
+		return
+	}
+	if resp == nil {
+		logger.Debug("Respsonse is nil")
+	} else {
+		fmt.Printf("status code is %d", resp.StatusCode())
+		resp.Error()
+	}
 }
