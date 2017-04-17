@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -57,7 +58,12 @@ var configFile = "config.yaml"
 var config Configuration
 var logger *zap.Logger
 
+func init() {
+	flag.StringVar(&configFile, "configfile", "config.yaml", "The config file to use, default config.yaml")
+}
+
 func main() {
+	flag.Parse()
 	/*
 		c2 := Configuration{}
 		c2.DBHost = "TEST"
