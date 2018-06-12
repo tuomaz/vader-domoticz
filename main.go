@@ -210,8 +210,6 @@ func main() {
 							}
 							sendData(vd)
 						}
-						logger.Debug("Data", zap.String("name", name), zap.String("value", dd.Svalue1))
-
 					},
 				},
 			},
