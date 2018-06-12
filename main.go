@@ -189,7 +189,6 @@ func main() {
 					QoS:         mqtt.QoS0,
 					// Define the processing of the message handler.
 					Handler: func(topicName, message []byte) {
-						logger.Debug("full message", zap.ByteString("msg", message))
 						dd := &DomoticzsData{}
 						err := json.Unmarshal(message, dd)
 						if err != nil {
@@ -271,7 +270,6 @@ func createLogger() (*zap.Logger, zap.AtomicLevel, error) {
 
 func findVaderTypes(domoticz string) (string, string) {
 	for _, s := range config.Sensor {
-		fmt.Printf("%s, %s\n", s.Domoticz, domoticz)
 		if s.Domoticz == domoticz {
 			return s.Vader, s.SType
 		}
@@ -282,17 +280,11 @@ func findVaderTypes(domoticz string) (string, string) {
 func sendData(vd VaderData) {
 	list := make([]VaderData, 0)
 	list = append(list, vd)
-	resp, err := resty.R().
+	_, err := resty.R().
 		SetBody(list).
 		Post("http://" + config.RemoteHost + "/" + config.RemoteApp + "/rest/save")
 	if err != nil {
 		logger.Error("Failed to post data", zap.Error(err))
 		return
-	}
-	if resp == nil {
-		logger.Debug("Respsonse is nil")
-	} else {
-		fmt.Printf("status code is %d", resp.StatusCode())
-		resp.Error()
 	}
 }
